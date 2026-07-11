@@ -26,38 +26,46 @@ NUMERIC_FEATURES = [
     'Elementary School Score',
     'High School Score',
     'Tax assessed value',
-    'Annual tax amount'
+    'Annual tax amount',
+    'Bedrooms',
+    'Lot',
+    'Middle School Score'
 ]
-CAT_FEATURES = ['Type']
+CAT_FEATURES = ['Type','City']
 
 TARGET = 'Sold Price'
 
 # 从 data 里取出特征和目标变量
 df = data[NUMERIC_FEATURES + CAT_FEATURES + [TARGET]]
 
-# 打印 shape
-# print(df.shape)
-
-##缺失值处理
-
-#查看缺失值
-# print(df[FEATURES].isnull().sum())
-# print("-------------")
-
-#中位值填充
-df[NUMERIC_FEATURES] = df[NUMERIC_FEATURES].fillna(df[NUMERIC_FEATURES].median())
-
-# print(df[FEATURES].isnull().sum())
-
-lower_limit = df['Total interior livable area'].quantile(0.01)
-upper_limit = df['Total interior livable area'].quantile(0.99)
-df['Total interior livable area'] = df['Total interior livable area'].clip(lower=lower_limit, upper=upper_limit)
+df['Bedrooms'] = pd.to_numeric(df['Bedrooms'], errors='coerce')
 
 #划分训练集和验证集
 X = df[NUMERIC_FEATURES + CAT_FEATURES]
 y = df[TARGET]
 
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+top_cities = X_train['City'].value_counts().nlargest(20).index
+X_train['City'] = X_train['City'].where(X_train['City'].isin(top_cities), 'Other')
+X_val['City']   = X_val['City'].where(X_val['City'].isin(top_cities), 'Other')
+
+#中位值填充
+median = X_train[NUMERIC_FEATURES].median()
+X_train[NUMERIC_FEATURES] = X_train[NUMERIC_FEATURES].fillna(X_train[NUMERIC_FEATURES].median())
+X_val[NUMERIC_FEATURES] = X_val[NUMERIC_FEATURES].fillna(X_val[NUMERIC_FEATURES].median())
+
+#清除异常值
+lower_limit = X_train['Total interior livable area'].quantile(0.01)
+upper_limit = X_train['Total interior livable area'].quantile(0.99)
+X_train['Total interior livable area'] = X_train['Total interior livable area'].clip(lower=lower_limit, upper=upper_limit)
+X_val['Total interior livable area'] = X_val['Total interior livable area'].clip(lower=lower_limit, upper=upper_limit)
+
+lower_limit = X_train['Lot'].quantile(0.01)
+upper_limit = X_train['Lot'].quantile(0.99)
+X_train['Lot'] = X_train['Lot'].clip(lower=lower_limit, upper=upper_limit)
+X_val['Lot'] = X_val['Lot'].clip(lower=lower_limit, upper=upper_limit)
+
 
 # 目标 log1p 变换：缓解房价右偏，训练在 log 空间进行，评估时再 expm1 转回美元
 y_train_log = np.log1p(y_train.values)
@@ -68,8 +76,8 @@ scaler.fit(X_train[NUMERIC_FEATURES])
 X_train_num = scaler.transform(X_train[NUMERIC_FEATURES])
 X_val_num = scaler.transform(X_val[NUMERIC_FEATURES])
 
-X_train_cat = pd.get_dummies(X_train['Type'], prefix='Type').astype(np.float32)
-X_val_cat = pd.get_dummies(X_val['Type'], prefix='Type').astype(np.float32)
+X_train_cat = pd.get_dummies(X_train[['Type','City']], prefix=['Type','City']).astype(np.float32)
+X_val_cat = pd.get_dummies(X_val[['Type','City']], prefix=['Type','City']).astype(np.float32)
 
 X_val_cat = X_val_cat.reindex(columns=X_train_cat.columns, fill_value=0)
 
