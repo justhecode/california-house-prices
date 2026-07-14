@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 PROJECT_PATH = Path(__file__).resolve().parent.parent
-df = pd.read_csv('data/train.csv')
+df = pd.read_csv(PROJECT_PATH / 'data' / 'classify-leaves' / 'train.csv')
 
 print(df['label'].value_counts())
 print("--------------------------------")
