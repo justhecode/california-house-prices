@@ -39,17 +39,28 @@ class LeNet(nn.Module):
 if __name__ == "__main__":
     # True: 训练并保存权重；False: 加载已有权重，只做测试集推理
     DO_TRAIN = True
-    NUM_EPOCHS = 150
+    NUM_EPOCHS = 50
     CKPT_PATH = PROJECT_PATH / "outputs" / "lenet.pth"
 
     data_root = PROJECT_PATH / "data" / "classify-leaves"
-    tfm = transforms.Compose(
+    # 验证/测试：固定预处理，不做随机增强
+    val_tfm = transforms.Compose(
         [
             transforms.Resize((32, 32)),
             transforms.ToTensor(),
         ]
     )
-    ds = dc.LeavesDataset(data_root / "train.csv", data_root, transform=tfm)
+    # 训练：随机翻转 + 小角度旋转，减轻过拟合
+    train_tfm = transforms.Compose(
+        [
+            transforms.Resize((32, 32)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(degrees=15),
+            transforms.ToTensor(),
+        ]
+    )
+    # 先建一份只为拿 label 映射与划分索引（transform 用 val 即可）
+    ds = dc.LeavesDataset(data_root / "train.csv", data_root, transform=val_tfm)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     (PROJECT_PATH / "outputs").mkdir(parents=True, exist_ok=True)
 
@@ -61,16 +72,30 @@ if __name__ == "__main__":
             random_state=42,
             stratify=ds.targets,
         )
+        train_base = dc.LeavesDataset(
+            data_root / "train.csv",
+            data_root,
+            transform=train_tfm,
+            label_to_idx=ds.label_to_idx,
+        )
+        val_base = dc.LeavesDataset(
+            data_root / "train.csv",
+            data_root,
+            transform=val_tfm,
+            label_to_idx=ds.label_to_idx,
+        )
         train_loader = DataLoader(
-            Subset(ds, train_idx), batch_size=32, shuffle=True
+            Subset(train_base, train_idx), batch_size=32, shuffle=True
         )
         val_loader = DataLoader(
-            Subset(ds, val_idx), batch_size=32, shuffle=False
+            Subset(val_base, val_idx), batch_size=32, shuffle=False
         )
 
         model = LeNet(num_classes=len(ds.label_to_idx)).to(device)
         criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        optimizer = torch.optim.SGD(
+            model.parameters(), lr=0.01, momentum=0.9
+        )
 
         for epoch in range(NUM_EPOCHS):
             model.train()
@@ -121,7 +146,9 @@ if __name__ == "__main__":
     # --- 测试集推理并写出提交文件 ---
     idx_to_label = {idx: name for name, idx in ds.label_to_idx.items()}
     test_loader = DataLoader(
-        dc.LeavesTestDataset(data_root / "test.csv", data_root, transform=tfm),
+        dc.LeavesTestDataset(
+            data_root / "test.csv", data_root, transform=val_tfm
+        ),
         batch_size=32,
         shuffle=False,
     )
